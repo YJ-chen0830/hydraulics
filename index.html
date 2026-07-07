@@ -565,6 +565,22 @@ function drawWSP(results, yn, yc, S0, dx, steps){
   wrap.innerHTML=svg;
   wrap.style.display='';
 }
+
+// ── localStorage 自動儲存/還原 ──
+(function(){
+  var pfx='jrh_hyd_';
+  function save(el){localStorage.setItem(pfx+el.id,el.value);}
+  function restore(){
+    document.querySelectorAll('input[id],select[id],textarea[id]').forEach(function(el){
+      var v=localStorage.getItem(pfx+el.id);
+      if(v!==null) el.value=v;
+      el.addEventListener('input',function(){save(el);});
+      el.addEventListener('change',function(){save(el);});
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',restore);
+  else restore();
+})();
 </script>
 </body>
 </html>
