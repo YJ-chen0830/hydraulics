@@ -151,6 +151,7 @@
       <summary>📋 計算過程（供第三方檢核）</summary>
       <pre id="u-proc-text"></pre>
     </details>
+    <button class="pro-btn no-print" onclick="openPro()">📄 產出計算書 PDF</button>
   </div>
 </div>
 </div>
@@ -199,6 +200,7 @@
       <summary>📋 計算過程（供第三方檢核）</summary>
       <pre id="w-proc-text"></pre>
     </details>
+    <button class="pro-btn no-print" onclick="openPro()">📄 產出計算書 PDF</button>
   </div>
 </div>
 </div>
@@ -607,6 +609,13 @@ function drawWSP(results, yn, yc, S0, dx, steps){
   var wrap=document.getElementById('wsp-svg-wrap');
   wrap.innerHTML=svg;
   wrap.style.display='';
+}
+
+function openPro(){
+  JRH.checkEmail(function(){
+    document.querySelectorAll('details.proc').forEach(function(d){ d.open=true; d.style.display=''; });
+    window.print();
+  });
 }
 
 // ── 列印前強制展開所有計算過程 ──
