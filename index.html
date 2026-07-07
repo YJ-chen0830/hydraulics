@@ -36,6 +36,7 @@
   details.proc pre{margin:0;padding:10px 16px 14px;font-family:"Courier New",monospace;font-size:11.5px;line-height:1.85;white-space:pre-wrap;color:#2c3e50;border-top:1px solid var(--line);}
   #wsp-svg-wrap{margin-top:14px;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
 </style>
+<script src="email-gate.js"></script>
 </head>
 <body>
 <header>
@@ -137,421 +138,393 @@
 <script>
 var G = 9.81;
 
-function switchTab(id) {
-  ['uni','wsp'].forEach(function(t) {
+function switchTab(id){
+  ['uni','wsp'].forEach(function(t){
     document.getElementById('tab-'+t).classList.toggle('active', t===id);
     document.getElementById('pane-'+t).classList.toggle('active', t===id);
   });
 }
-
-function uShapeChange() {
-  var s = document.getElementById('u-shape').value;
-  document.getElementById('u-rect-g').style.display = s==='rect' ? '' : 'none';
-  document.getElementById('u-trap-g').style.display = s==='trap' ? '' : 'none';
-  document.getElementById('u-circ-g').style.display = s==='circ' ? '' : 'none';
+function uShapeChange(){
+  var s=document.getElementById('u-shape').value;
+  document.getElementById('u-rect-g').style.display=s==='rect'?'':'none';
+  document.getElementById('u-trap-g').style.display=s==='trap'?'':'none';
+  document.getElementById('u-circ-g').style.display=s==='circ'?'':'none';
+}
+function wShapeChange(){
+  var s=document.getElementById('w-shape').value;
+  document.getElementById('w-rect-g').style.display=s==='rect'?'':'none';
+  document.getElementById('w-trap-g').style.display=s==='trap'?'':'none';
 }
 
-function wShapeChange() {
-  var s = document.getElementById('w-shape').value;
-  document.getElementById('w-rect-g').style.display = s==='rect' ? '' : 'none';
-  document.getElementById('w-trap-g').style.display = s==='trap' ? '' : 'none';
-}
-
-function secProps(shape, p, y) {
-  var A, Pw, T, R, Dh;
-  if (shape === 'rect') {
-    A  = p.B * y;
-    Pw = p.B + 2 * y;
-    T  = p.B;
-  } else if (shape === 'trap') {
-    A  = (p.b + p.z * y) * y;
-    Pw = p.b + 2 * y * Math.sqrt(1 + p.z * p.z);
-    T  = p.b + 2 * p.z * y;
-  } else {
-    if (y >= p.D) y = p.D * 0.9999;
-    var theta = 2 * Math.acos(1 - 2 * y / p.D);
-    A  = p.D * p.D / 8 * (theta - Math.sin(theta));
-    Pw = p.D * theta / 2;
-    T  = p.D * Math.sin(theta / 2);
+/* ---- 斷面幾何 ---- */
+function secProps(shape, p, y){
+  var A,P_w,T,R,Dh;
+  if(shape==='rect'){
+    A=p.B*y; P_w=p.B+2*y; T=p.B;
+  } else if(shape==='trap'){
+    A=(p.b+p.z*y)*y;
+    P_w=p.b+2*y*Math.sqrt(1+p.z*p.z);
+    T=p.b+2*p.z*y;
+  } else { // circ
+    if(y>=p.D){ y=p.D*0.9999; }
+    var theta=2*Math.acos(1-2*y/p.D);
+    A=p.D*p.D/8*(theta-Math.sin(theta));
+    P_w=p.D*theta/2;
+    T=p.D*Math.sin(theta/2);
   }
-  R  = A / Pw;
-  Dh = A / T;
-  return { A:A, Pw:Pw, R:R, T:T, Dh:Dh };
+  R=A/P_w; Dh=A/T;
+  return {A:A, Pw:P_w, R:R, T:T, Dh:Dh};
 }
 
-function manningQ(A, R, n, S) {
-  return (1/n) * A * Math.pow(R, 2/3) * Math.pow(S, 0.5);
-}
+function manningQ(A,R,n,S){ return (1/n)*A*Math.pow(R,2/3)*Math.pow(S,0.5); }
+function specE(Q,A,y){ return y+Q*Q/(2*G*A*A); }
+function calcSf(Q,A,n,R){ var V=Q/A; return V*V*n*n/Math.pow(R,4/3); }
 
-function specE(Q, A, y) {
-  return y + Q*Q / (2 * G * A * A);
-}
-
-function calcSf(Q, A, n, R) {
-  var V = Q / A;
-  return V * V * n * n / Math.pow(R, 4/3);
-}
-
-function critDepth(shape, p, Q) {
-  var y = 1.0;
-  for (var i = 0; i < 200; i++) {
-    var s  = secProps(shape, p, y);
-    var F  = Q*Q * s.T / (G * s.A * s.A * s.A) - 1;
-    var s2 = secProps(shape, p, y + 1e-8);
-    var F2 = Q*Q * s2.T / (G * s2.A * s2.A * s2.A) - 1;
-    var dF = (F2 - F) / 1e-8;
-    if (Math.abs(dF) < 1e-20) break;
-    var dy = -F / dF;
-    y += dy;
-    if (y < 0.001) y = 0.001;
-    if (Math.abs(dy) < 1e-9) break;
+/* Newton-Raphson 求臨界水深 */
+function critDepth(shape, p, Q){
+  var y=1.0, eps=1e-8;
+  for(var i=0;i<200;i++){
+    var s=secProps(shape,p,y);
+    var F=Q*Q*s.T/(G*s.A*s.A*s.A)-1;
+    var s2=secProps(shape,p,y+eps);
+    var F2=Q*Q*s2.T/(G*s2.A*s2.A*s2.A)-1;
+    var dF=(F2-F)/eps;
+    if(Math.abs(dF)<1e-20) break;
+    var dy=-F/dF;
+    y+=dy; if(y<0.001)y=0.001;
+    if(Math.abs(dy)<1e-9) break;
   }
   return y;
 }
 
-function normDepth(shape, p, Q, n, S) {
-  var y = 0.5;
-  for (var i = 0; i < 200; i++) {
-    var s  = secProps(shape, p, y);
-    var Qc = manningQ(s.A, s.R, n, S);
-    var s2 = secProps(shape, p, y + 1e-8);
-    var Qc2= manningQ(s2.A, s2.R, n, S);
-    var dQ = (Qc2 - Qc) / 1e-8;
-    if (Math.abs(dQ) < 1e-20) break;
-    var dy = (Q - Qc) / dQ;
-    y += dy;
-    if (y < 0.001) y = 0.001;
-    if (Math.abs(dy) < 1e-9) break;
+/* Newton-Raphson 求正常水深 */
+function normDepth(shape, p, Q, n, S){
+  var y=0.5, eps=1e-8;
+  for(var i=0;i<200;i++){
+    var s=secProps(shape,p,y);
+    var Qc=manningQ(s.A,s.R,n,S);
+    var s2=secProps(shape,p,y+eps);
+    var Qc2=manningQ(s2.A,s2.R,n,S);
+    var dQ=(Qc2-Qc)/eps;
+    if(Math.abs(dQ)<1e-20) break;
+    var dy=(Q-Qc)/dQ;
+    y+=dy; if(y<0.001)y=0.001;
+    if(Math.abs(dy)<1e-9) break;
   }
   return y;
 }
 
 /* ============ 均勻流 ============ */
-function calcUniform() {
-  var shape = document.getElementById('u-shape').value;
-  var nv    = parseFloat(document.getElementById('u-n').value);
-  var S0    = parseFloat(document.getElementById('u-S').value);
-  var y     = parseFloat(document.getElementById('u-y').value);
-  var p = {};
-  var shapeDesc = '';
-
-  if (shape === 'rect') {
-    p.B = parseFloat(document.getElementById('u-B').value);
-    shapeDesc = '矩形 B=' + p.B + ' m';
-  } else if (shape === 'trap') {
-    p.b = parseFloat(document.getElementById('u-b').value);
-    p.z = parseFloat(document.getElementById('u-z').value);
-    shapeDesc = '梯形 b=' + p.b + ' m, z=' + p.z;
+function calcUniform(){
+  var shape=document.getElementById('u-shape').value;
+  var n_val=parseFloat(document.getElementById('u-n').value);
+  var S0=parseFloat(document.getElementById('u-S').value);
+  var y=parseFloat(document.getElementById('u-y').value);
+  var p={};
+  var shapeDesc='';
+  if(shape==='rect'){
+    p.B=parseFloat(document.getElementById('u-B').value);
+    shapeDesc='矩形 B='+p.B+' m';
+  } else if(shape==='trap'){
+    p.b=parseFloat(document.getElementById('u-b').value);
+    p.z=parseFloat(document.getElementById('u-z').value);
+    shapeDesc='梯形 b='+p.b+' m, z='+p.z;
   } else {
-    p.D = parseFloat(document.getElementById('u-D').value);
-    shapeDesc = '圓形 D=' + p.D + ' m';
+    p.D=parseFloat(document.getElementById('u-D').value);
+    shapeDesc='圓形 D='+p.D+' m';
   }
 
-  var s  = secProps(shape, p, y);
-  var Q  = manningQ(s.A, s.R, nv, S0);
-  var V  = Q / s.A;
-  var Fr = V / Math.sqrt(G * s.Dh);
-  var E  = specE(Q, s.A, y);
-  var yc = critDepth(shape, p, Q);
-  var sc = secProps(shape, p, yc);
-  var Ec = specE(Q, sc.A, yc);
-  var regime   = Fr < 0.99 ? '緩流 Subcritical' : Fr > 1.01 ? '急流 Supercritical' : '臨界流 Critical';
-  var regColor = Fr < 1 ? '#1565c0' : '#c62828';
+  var s=secProps(shape,p,y);
+  var Q=manningQ(s.A,s.R,n_val,S0);
+  var V=Q/s.A;
+  var Fr=V/Math.sqrt(G*s.Dh);
+  var E=specE(Q,s.A,y);
+  var yc=critDepth(shape,p,Q);
+  var sc=secProps(shape,p,yc);
+  var Ec=specE(Q,sc.A,yc);
+  var regime=Fr<0.99?'緩流 Subcritical':Fr>1.01?'急流 Supercritical':'臨界流 Critical';
+  var regColor=Fr<1?'#1565c0':'#c62828';
 
-  var proc = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
-    '  均勻流計算過程（Manning 公式）\n' +
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
-    '【輸入】\n' +
-    '  斷面：' + shapeDesc + '\n' +
-    '  水深 y = ' + y + ' m，Manning n = ' + nv + '，S₀ = ' + S0 + '\n\n';
+  var proc='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'+
+    '  均勻流計算過程（Manning 公式）\n'+
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n'+
+    '【輸入】\n'+
+    '  斷面：'+shapeDesc+'\n'+
+    '  水深 y = '+y+' m，Manning n = '+n_val+'，S₀ = '+S0+'\n\n';
 
-  if (shape === 'rect') {
-    proc += '【一】斷面水力幾何（矩形）\n' +
-      '  A  = B×y = ' + p.B + '×' + y + ' = ' + s.A.toFixed(4) + ' m²\n' +
-      '  P  = B+2y = ' + p.B + '+2×' + y + ' = ' + s.Pw.toFixed(4) + ' m\n' +
-      '  R  = A/P = ' + s.R.toFixed(4) + ' m\n' +
-      '  T  = B = ' + p.B + ' m\n' +
-      '  Dh = A/T = ' + s.Dh.toFixed(4) + ' m（水力深度）\n';
-  } else if (shape === 'trap') {
-    proc += '【一】斷面水力幾何（梯形）\n' +
-      '  A  = (b+z·y)·y = (' + p.b + '+' + p.z + '×' + y + ')×' + y + ' = ' + s.A.toFixed(4) + ' m²\n' +
-      '  P  = b+2y√(1+z²) = ' + p.b + '+2×' + y + '×√(1+' + p.z + '²) = ' + s.Pw.toFixed(4) + ' m\n' +
-      '  R  = A/P = ' + s.R.toFixed(4) + ' m\n' +
-      '  T  = b+2zy = ' + s.T.toFixed(4) + ' m\n' +
-      '  Dh = A/T = ' + s.Dh.toFixed(4) + ' m\n';
+  if(shape==='rect'){
+    proc+='【一】斷面水力幾何（矩形）\n'+
+      '  A  = B×y = '+p.B+'×'+y+' = '+s.A.toFixed(4)+' m²\n'+
+      '  P  = B+2y = '+p.B+'+2×'+y+' = '+s.Pw.toFixed(4)+' m\n'+
+      '  R  = A/P = '+s.A.toFixed(4)+'/'+s.Pw.toFixed(4)+' = '+s.R.toFixed(4)+' m\n'+
+      '  T  = B = '+p.B+' m\n'+
+      '  Dh = A/T = '+s.Dh.toFixed(4)+' m（水力深度）\n';
+  } else if(shape==='trap'){
+    proc+='【一】斷面水力幾何（梯形）\n'+
+      '  A  = (b+z·y)·y = ('+p.b+'+'+p.z+'×'+y+')×'+y+' = '+s.A.toFixed(4)+' m²\n'+
+      '  P  = b+2y√(1+z²) = '+p.b+'+2×'+y+'×√(1+'+p.z+'²) = '+s.Pw.toFixed(4)+' m\n'+
+      '  R  = A/P = '+s.R.toFixed(4)+' m\n'+
+      '  T  = b+2zy = '+s.T.toFixed(4)+' m\n'+
+      '  Dh = A/T = '+s.Dh.toFixed(4)+' m\n';
   } else {
-    var thetaDeg = 2 * Math.acos(1 - 2*y/p.D) * 180 / Math.PI;
-    proc += '【一】斷面水力幾何（圓形部分滿流）\n' +
-      '  θ  = 2·arccos(1−2y/D) = ' + thetaDeg.toFixed(3) + '°\n' +
-      '  A  = D²/8·(θ−sinθ) = ' + s.A.toFixed(4) + ' m²\n' +
-      '  P  = D·θ/2 = ' + s.Pw.toFixed(4) + ' m\n' +
-      '  R  = A/P = ' + s.R.toFixed(4) + ' m\n' +
-      '  T  = D·sin(θ/2) = ' + s.T.toFixed(4) + ' m\n' +
-      '  Dh = A/T = ' + s.Dh.toFixed(4) + ' m\n';
+    var thetaDeg=(2*Math.acos(1-2*y/p.D)*180/Math.PI);
+    proc+='【一】斷面水力幾何（圓形部分滿流）\n'+
+      '  θ  = 2·arccos(1−2y/D) = '+thetaDeg.toFixed(3)+'°\n'+
+      '  A  = D²/8·(θ−sinθ) = '+s.A.toFixed(4)+' m²\n'+
+      '  P  = D·θ/2 = '+s.Pw.toFixed(4)+' m\n'+
+      '  R  = A/P = '+s.R.toFixed(4)+' m\n'+
+      '  T  = D·sin(θ/2) = '+s.T.toFixed(4)+' m\n'+
+      '  Dh = A/T = '+s.Dh.toFixed(4)+' m\n';
   }
 
-  proc += '\n【二】Manning 公式\n' +
-    '  Q = (1/n)·A·R^(2/3)·S₀^(1/2)\n' +
-    '    = (1/' + nv + ')×' + s.A.toFixed(4) + '×' + s.R.toFixed(4) + '^(2/3)×' + S0 + '^(1/2)\n' +
-    '    = ' + (1/nv).toFixed(3) + '×' + s.A.toFixed(4) + '×' + Math.pow(s.R, 2/3).toFixed(4) + '×' + Math.pow(S0, 0.5).toFixed(6) + '\n' +
-    '    = ' + Q.toFixed(4) + ' m³/s\n' +
-    '  V = Q/A = ' + V.toFixed(4) + ' m/s\n\n' +
-    '【三】臨界水深（Newton-Raphson 迭代，Q²T/gA³=1）\n' +
-    '  yc = ' + yc.toFixed(4) + ' m，Vc = ' + (Q/sc.A).toFixed(4) + ' m/s，Ec = ' + Ec.toFixed(4) + ' m\n\n' +
-    '【四】Froude 數\n' +
-    '  Fr = V/√(g·Dh) = ' + V.toFixed(4) + '/√(' + G + '×' + s.Dh.toFixed(4) + ')\n' +
-    '     = ' + V.toFixed(4) + '/' + Math.sqrt(G*s.Dh).toFixed(4) + ' = ' + Fr.toFixed(4) + '\n' +
-    '  → ' + regime + '\n\n' +
-    '【五】比能\n' +
-    '  E = y + V²/(2g) = ' + y + ' + ' + (V*V/(2*G)).toFixed(4) + ' = ' + E.toFixed(4) + ' m\n\n' +
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
-    '  Manning (1891); Chaudhry M.H. (2008) Open-Channel Hydraulics\n' +
+  proc+='\n【二】Manning 公式\n'+
+    '  Q = (1/n)·A·R^(2/3)·S₀^(1/2)\n'+
+    '    = (1/'+n_val+')×'+s.A.toFixed(4)+'×'+s.R.toFixed(4)+'^(2/3)×'+S0+'^(1/2)\n'+
+    '    = '+( 1/n_val ).toFixed(3)+'×'+s.A.toFixed(4)+'×'+Math.pow(s.R,2/3).toFixed(4)+'×'+Math.pow(S0,0.5).toFixed(6)+'\n'+
+    '    = '+Q.toFixed(4)+' m³/s\n'+
+    '  V = Q/A = '+V.toFixed(4)+' m/s\n\n'+
+    '【三】臨界水深（Newton-Raphson 迭代）\n'+
+    '  臨界條件：Q²·T / (g·A³) = 1\n'+
+    '  → yc = '+yc.toFixed(4)+' m，Vc = '+(Q/sc.A).toFixed(4)+' m/s，Ec = '+Ec.toFixed(4)+' m\n\n'+
+    '【四】Froude 數與流況\n'+
+    '  Fr = V / √(g·Dh) = '+V.toFixed(4)+' / √('+G+'×'+s.Dh.toFixed(4)+')\n'+
+    '     = '+V.toFixed(4)+' / '+Math.sqrt(G*s.Dh).toFixed(4)+' = '+Fr.toFixed(4)+'\n'+
+    '  → '+regime+'\n\n'+
+    '【五】比能\n'+
+    '  E = y + V²/(2g) = '+y+' + '+V.toFixed(4)+'²/(2×'+G+')\n'+
+    '    = '+y+' + '+(V*V/(2*G)).toFixed(4)+' = '+E.toFixed(4)+' m\n\n'+
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'+
+    '  Manning (1891); Chaudhry M.H. (2008) Open-Channel Hydraulics\n'+
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
 
-  document.getElementById('u-result').innerHTML =
-    '<div class="rbox">' +
-    '<strong>流量 Q</strong> = ' + Q.toFixed(4) + ' m³/s<br>' +
-    '<strong>流速 V</strong> = ' + V.toFixed(4) + ' m/s<br>' +
-    '<strong>過水面積 A</strong> = ' + s.A.toFixed(4) + ' m²<br>' +
-    '<strong>水力半徑 R</strong> = ' + s.R.toFixed(4) + ' m<br>' +
-    '<strong>比能 E</strong> = ' + E.toFixed(4) + ' m<br>' +
-    '<strong>臨界水深 yc</strong> = ' + yc.toFixed(4) + ' m<br>' +
-    '<strong>Froude 數 Fr</strong> = ' + Fr.toFixed(4) +
-    ' <span class="badge" style="background:' + regColor + '">' + regime + '</span>' +
+  document.getElementById('u-result').innerHTML=
+    '<div class="rbox">'+
+    '<strong>流量 Q</strong> = '+Q.toFixed(4)+' m³/s<br>'+
+    '<strong>流速 V</strong> = '+V.toFixed(4)+' m/s<br>'+
+    '<strong>過水面積 A</strong> = '+s.A.toFixed(4)+' m²<br>'+
+    '<strong>水力半徑 R</strong> = '+s.R.toFixed(4)+' m<br>'+
+    '<strong>比能 E</strong> = '+E.toFixed(4)+' m<br>'+
+    '<strong>臨界水深 yc</strong> = '+yc.toFixed(4)+' m<br>'+
+    '<strong>Froude 數 Fr</strong> = '+Fr.toFixed(4)+
+    ' <span class="badge" style="background:'+regColor+'">'+regime+'</span>'+
     '</div>';
 
-  document.getElementById('u-proc-text').textContent = proc;
-  document.getElementById('u-proc').style.display = '';
+  document.getElementById('u-proc-text').textContent=proc;
+  document.getElementById('u-proc').style.display='';
 }
 
 /* ============ WSP ============ */
-function calcWSP() {
-  var shape  = document.getElementById('w-shape').value;
-  var nv     = parseFloat(document.getElementById('w-n').value);
-  var S0     = parseFloat(document.getElementById('w-S').value);
-  var Q      = parseFloat(document.getElementById('w-Q').value);
-  var y1     = parseFloat(document.getElementById('w-y1').value);
-  var dx     = parseFloat(document.getElementById('w-dx').value);
-  var steps  = Math.min(50, Math.max(1, parseInt(document.getElementById('w-steps').value)));
-  var p = {};
-  var shapeDesc = '';
-
-  if (shape === 'rect') {
-    p.B = parseFloat(document.getElementById('w-B').value);
-    shapeDesc = '矩形 B=' + p.B + ' m';
+function calcWSP(){
+  var shape=document.getElementById('w-shape').value;
+  var n_val=parseFloat(document.getElementById('w-n').value);
+  var S0=parseFloat(document.getElementById('w-S').value);
+  var Q=parseFloat(document.getElementById('w-Q').value);
+  var y1=parseFloat(document.getElementById('w-y1').value);
+  var dx=parseFloat(document.getElementById('w-dx').value);
+  var steps=Math.min(50,Math.max(1,parseInt(document.getElementById('w-steps').value)));
+  var p={};
+  var shapeDesc='';
+  if(shape==='rect'){
+    p.B=parseFloat(document.getElementById('w-B').value);
+    shapeDesc='矩形 B='+p.B+' m';
   } else {
-    p.b = parseFloat(document.getElementById('w-b').value);
-    p.z = parseFloat(document.getElementById('w-z').value);
-    shapeDesc = '梯形 b=' + p.b + ' m, z=' + p.z;
+    p.b=parseFloat(document.getElementById('w-b').value);
+    p.z=parseFloat(document.getElementById('w-z').value);
+    shapeDesc='梯形 b='+p.b+' m, z='+p.z;
   }
 
-  var yc = critDepth(shape, p, Q);
-  var yn = normDepth(shape, p, Q, nv, S0);
+  var yc=critDepth(shape,p,Q);
+  var yn=normDepth(shape,p,Q,n_val,S0);
 
-  function node(y) {
-    var s  = secProps(shape, p, y);
-    var V  = Q / s.A;
-    var Fr = V / Math.sqrt(G * s.Dh);
-    var E  = specE(Q, s.A, y);
-    var Sf = calcSf(Q, s.A, nv, s.R);
-    return { y:y, A:s.A, V:V, Fr:Fr, E:E, Sf:Sf };
+  function nodeProps(y){
+    var s=secProps(shape,p,y);
+    var V=Q/s.A;
+    var Fr=V/Math.sqrt(G*s.Dh);
+    var E=specE(Q,s.A,y);
+    var Sf=calcSf(Q,s.A,n_val,s.R);
+    return {y:y,A:s.A,V:V,Fr:Fr,E:E,Sf:Sf};
   }
 
-  var results = [ node(y1) ];
-  results[0].x = 0;
-  var iterLog = [];
+  var results=[nodeProps(y1)];
+  results[0].x=0;
+  var iterLog=[];
 
-  for (var i = 1; i <= steps; i++) {
-    var prev   = results[i-1];
-    var yNext  = prev.y;
-    var E1     = prev.E;
-    var Sf1    = prev.Sf;
-    var itCount = 0;
-
-    for (var it = 0; it < 80; it++) {
-      var cur    = node(yNext);
-      var Sfavg  = (Sf1 + cur.Sf) / 2;
-      var E2tgt  = E1 + (S0 - Sfavg) * dx;
-      var F      = cur.E - E2tgt;
-      var cur2   = node(yNext + 1e-7);
-      var Sf2avg = (Sf1 + cur2.Sf) / 2;
-      var E2t2   = E1 + (S0 - Sf2avg) * dx;
-      var F2     = cur2.E - E2t2;
-      var dF     = (F2 - F) / 1e-7;
-      if (Math.abs(dF) < 1e-20) break;
-      var dy = -F / dF;
-      yNext += dy;
-      if (yNext < 0.005) yNext = 0.005;
-      itCount = it + 1;
-      if (Math.abs(dy) < 1e-9) break;
+  for(var i=1;i<=steps;i++){
+    var prev=results[i-1];
+    var yNext=prev.y; // initial guess
+    var ilog='  步驟'+i+' (x='+(i*dx)+'m): ';
+    // Newton-Raphson: F(y2)= E(y2) - [E1 + (S0-(Sf1+Sf2)/2)*dx] = 0
+    var E1=prev.E, Sf1=prev.Sf;
+    for(var it=0;it<80;it++){
+      var cur=nodeProps(yNext);
+      var Sfavg=(Sf1+cur.Sf)/2;
+      var E2target=E1+(S0-Sfavg)*dx;
+      var F=cur.E-E2target;
+      // numerical derivative
+      var eps=1e-7;
+      var cur2=nodeProps(yNext+eps);
+      var Sfavg2=(Sf1+cur2.Sf)/2;
+      var E2t2=E1+(S0-Sfavg2)*dx;
+      var F2=cur2.E-E2t2;
+      var dF=(F2-F)/eps;
+      if(Math.abs(dF)<1e-20) break;
+      var dy=-F/dF;
+      yNext+=dy;
+      if(yNext<0.005) yNext=0.005;
+      if(Math.abs(dy)<1e-9){ ilog+='收斂('+it+'次迭代)'; break; }
     }
-
-    var nd = node(yNext);
-    nd.x = i * dx;
-    results.push(nd);
-    iterLog.push('  步驟' + i + ' (x=' + nd.x + 'm): y=' + yNext.toFixed(4) +
-      'm, Fr=' + nd.Fr.toFixed(4) + ', E=' + nd.E.toFixed(4) + 'm [' + itCount + '次迭代]');
+    var node=nodeProps(yNext);
+    node.x=i*dx;
+    results.push(node);
+    iterLog.push(ilog+' y='+yNext.toFixed(4)+'m, Fr='+node.Fr.toFixed(3)+', E='+node.E.toFixed(4)+'m');
   }
 
-  /* 結果表 */
-  var tbl = '<table><tr><th>x(m)</th><th>水深 y(m)</th><th>流速 V(m/s)</th><th>Fr</th><th>比能 E(m)</th><th>Sf</th></tr>';
-  results.forEach(function(r) {
-    var fc = r.Fr < 0.95 ? '#1565c0' : r.Fr > 1.05 ? '#c62828' : '#6a1aaa';
-    tbl += '<tr>' +
-      '<td>' + r.x.toFixed(0) + '</td>' +
-      '<td>' + r.y.toFixed(4) + '</td>' +
-      '<td>' + r.V.toFixed(3) + '</td>' +
-      '<td style="color:' + fc + ';font-weight:700">' + r.Fr.toFixed(4) + '</td>' +
-      '<td>' + r.E.toFixed(4) + '</td>' +
-      '<td>' + r.Sf.toExponential(3) + '</td></tr>';
+  // Build table
+  var tbl='<table><tr><th>x(m)</th><th>水深 y(m)</th><th>流速 V(m/s)</th><th>Fr</th><th>比能 E(m)</th><th>Sf</th></tr>';
+  results.forEach(function(r){
+    var fc=r.Fr<0.95?'#1565c0':r.Fr>1.05?'#c62828':'#6a1aaa';
+    tbl+='<tr><td>'+r.x.toFixed(0)+'</td><td>'+r.y.toFixed(4)+'</td><td>'+r.V.toFixed(3)+'</td>'+
+      '<td style="color:'+fc+';font-weight:700">'+r.Fr.toFixed(3)+'</td>'+
+      '<td>'+r.E.toFixed(4)+'</td><td>'+r.Sf.toExponential(3)+'</td></tr>';
   });
-  tbl += '</table>';
+  tbl+='</table>';
 
-  var sc_yn  = secProps(shape, p, yn);
-  var Sf_yn  = calcSf(Q, sc_yn.A, nv, sc_yn.R);
-  var isMild = S0 < Sf_yn;
-  var profileType = isMild ? '緩坡 (Mild Slope)' : '陡坡 (Steep Slope)';
+  var sc_yn=secProps(shape,p,yn);
+  var Sf_yn=calcSf(Q,sc_yn.A,n_val,sc_yn.R);
+  var isMild=S0<Sf_yn;
+  var profileType=isMild?'緩坡 (Mild Slope)':'陡坡 (Steep Slope)';
 
-  document.getElementById('w-result').innerHTML =
-    '<div class="rbox" style="margin-bottom:10px">' +
-    '<strong>正常水深 yn</strong> = ' + yn.toFixed(4) + ' m &nbsp;|&nbsp; ' +
-    '<strong>臨界水深 yc</strong> = ' + yc.toFixed(4) + ' m &nbsp;|&nbsp; ' +
-    '<strong>坡型</strong>: ' + profileType +
-    '</div>' + tbl;
+  document.getElementById('w-result').innerHTML=
+    '<div class="rbox" style="margin-bottom:10px">'+
+    '<strong>正常水深 yn</strong> = '+yn.toFixed(4)+' m &nbsp;|&nbsp; '+
+    '<strong>臨界水深 yc</strong> = '+yc.toFixed(4)+' m &nbsp;|&nbsp; '+
+    '<strong>坡型</strong>: '+profileType+
+    '</div>'+tbl;
 
-  drawWSP(results, yn, yc, S0);
+  // Draw WSP SVG
+  drawWSP(results, yn, yc, S0, dx, steps);
 
-  /* 計算過程 */
-  var proc = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
-    '  水面線計算過程（Standard Step Method 標準步推法）\n' +
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
-    '【輸入】\n' +
-    '  斷面：' + shapeDesc + '，n=' + nv + '，S₀=' + S0 + '\n' +
-    '  Q=' + Q + ' m³/s，起始水深 y₁=' + y1 + ' m\n' +
-    '  Δx=' + dx + ' m，步數=' + steps + '\n\n' +
-    '【一】正常水深 yn（Manning 反算，Newton-Raphson）\n' +
-    '  yn = ' + yn.toFixed(4) + ' m\n\n' +
-    '【二】臨界水深 yc（Q²T/gA³=1，Newton-Raphson）\n' +
-    '  yc = ' + yc.toFixed(4) + ' m\n' +
-    '  坡型：S₀=' + S0 + (S0 < Sf_yn ? ' < ' : ' > ') + 'Sf(yn)=' + Sf_yn.toExponential(4) + ' → ' + profileType + '\n\n' +
-    '【三】能量方程（Standard Step）\n' +
-    '  E₂ = E₁ + (S₀ − S̄f)·Δx\n' +
-    '  S̄f = (Sf₁+Sf₂)/2，Sf = n²V²/R^(4/3)\n' +
-    '  Newton-Raphson 解未知水深 y₂\n\n' +
-    '【四】各步驟迭代\n' +
-    iterLog.join('\n') + '\n\n' +
-    '【五】結果摘要\n' +
-    'x(m)      y(m)      V(m/s)    Fr        E(m)      Sf\n' +
-    '─'.repeat(58) + '\n';
+  // Process text
+  var proc='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'+
+    '  水面線計算過程（Standard Step Method 標準步推法）\n'+
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n'+
+    '【輸入】\n'+
+    '  斷面：'+shapeDesc+'，n='+n_val+'，S₀='+S0+'\n'+
+    '  Q='+Q+' m³/s，起始水深 y₁='+y1+' m，Δx='+dx+' m，步數='+steps+'\n\n'+
+    '【一】正常水深 yn（Manning 反算，Newton-Raphson）\n'+
+    '  yn = '+yn.toFixed(4)+' m\n\n'+
+    '【二】臨界水深 yc（Q²T/gA³=1 Newton-Raphson）\n'+
+    '  yc = '+yc.toFixed(4)+' m\n'+
+    '  坡型判斷：S₀='+S0+(S0<Sf_yn?' < ':' > ')+'Sf(yn)='+Sf_yn.toExponential(4)+' → '+profileType+'\n\n'+
+    '【三】能量方程式（Standard Step）\n'+
+    '  E₂ = E₁ + (S₀ − S̄f)·Δx\n'+
+    '  S̄f = (Sf₁+Sf₂)/2，Sf = n²V²/R^(4/3)\n'+
+    '  以 Newton-Raphson 迭代解每步驟的未知水深 y₂\n\n'+
+    '【四】各步驟迭代結果\n'+
+    iterLog.join('\n')+'\n\n'+
+    '【五】結果表\n'+
+    'x(m)      y(m)      V(m/s)    Fr        E(m)      Sf\n'+
+    '─'.repeat(60)+'\n';
 
-  results.forEach(function(r) {
-    proc += String(r.x.toFixed(0)).padEnd(10) +
-      r.y.toFixed(4).padEnd(10) +
-      r.V.toFixed(4).padEnd(10) +
-      r.Fr.toFixed(4).padEnd(10) +
-      r.E.toFixed(4).padEnd(10) +
-      r.Sf.toExponential(3) + '\n';
+  results.forEach(function(r){
+    proc+=String(r.x.toFixed(0)).padEnd(10)+
+      r.y.toFixed(4).padEnd(10)+
+      r.V.toFixed(4).padEnd(10)+
+      r.Fr.toFixed(4).padEnd(10)+
+      r.E.toFixed(4).padEnd(10)+
+      r.Sf.toExponential(3)+'\n';
   });
 
-  proc += '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
-    '  Chaudhry M.H. (2008) Open-Channel Hydraulics §7.3\n' +
+  proc+='\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'+
+    '  Chaudhry M.H. (2008) Open-Channel Hydraulics §7.3\n'+
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
 
-  document.getElementById('w-proc-text').textContent = proc;
-  document.getElementById('w-proc').style.display = '';
+  document.getElementById('w-proc-text').textContent=proc;
+  document.getElementById('w-proc').style.display='';
 }
 
-/* ============ 繪製水面線 SVG ============ */
-function drawWSP(results, yn, yc, S0) {
-  var W=680, H=280, PL=58, PR=30, PT=24, PB=44;
-  var iW = W - PL - PR;
-  var iH = H - PT - PB;
+function drawWSP(results, yn, yc, S0, dx, steps){
+  var W=680, H=260, PL=60, PR=20, PT=20, PB=40;
+  var iW=W-PL-PR, iH=H-PT-PB;
 
-  var xMax = results[results.length - 1].x;
-  var yArr = results.map(function(r){ return r.y; });
-  var allY = yArr.concat([yn * 0.85, yc * 0.85, yn * 1.2, yc * 1.2]);
-  var yMin = Math.min.apply(null, allY);
-  var yMax = Math.max.apply(null, allY);
-  if (yMax - yMin < 0.01) { yMin -= 0.05; yMax += 0.05; }
-  var yRange = yMax - yMin;
+  var xMax=results[results.length-1].x;
+  var yVals=results.map(function(r){return r.y;});
+  var yMin=Math.min.apply(null,yVals.concat([yc*0.7,yn*0.7]));
+  var yMax=Math.max.apply(null,yVals.concat([yc*1.2,yn*1.2]));
+  var yRange=yMax-yMin||1;
 
-  function px(x) { return PL + x / xMax * iW; }
-  function py(y) { return PT + iH - (y - yMin) / yRange * iH; }
+  function px(x){ return PL+x/xMax*iW; }
+  function py(y){ return PT+iH-(y-yMin)/yRange*iH; }
 
-  /* WSP 折線 */
-  var wsPts = results.map(function(r){ return px(r.x).toFixed(1) + ',' + py(r.y).toFixed(1); }).join(' ');
+  // Build WSP polyline points
+  var wsPts=results.map(function(r){ return px(r.x)+','+py(r.y); }).join(' ');
 
-  /* 水面填充多邊形（水面線下方藍色填色） */
-  var fillPts = results.map(function(r){ return px(r.x).toFixed(1) + ',' + py(r.y).toFixed(1); });
-  fillPts.push((PL + iW) + ',' + (PT + iH));
-  fillPts.push(PL + ',' + (PT + iH));
-  var fillPoly = fillPts.join(' ');
+  // yn line
+  var ynY=py(yn);
+  // yc line
+  var ycY=py(yc);
 
-  /* 格線 */
-  var grid = '';
-  var ny = 5;
-  for (var j = 0; j <= ny; j++) {
-    var yv = yMin + j * yRange / ny;
-    var yp = py(yv).toFixed(1);
-    grid += '<line x1="' + PL + '" y1="' + yp + '" x2="' + (PL+iW) + '" y2="' + yp + '" stroke="#e8e8e8" stroke-width="1"/>';
-    grid += '<line x1="' + PL + '" y1="' + yp + '" x2="' + (PL-5) + '" y2="' + yp + '" stroke="#999" stroke-width="1"/>';
-    grid += '<text x="' + (PL-8) + '" y="' + (parseFloat(yp)+4) + '" font-size="10" text-anchor="end" fill="#666">' + yv.toFixed(2) + '</text>';
+  // Bed elevation (channel bottom: slope S0 going up to the right)
+  // represent bed at left as 0, at right as -S0*xMax (we show elevation relative)
+  var bedLeft=yMin-0.1*yRange;
+  var bedRight=bedLeft;
+
+  // x-axis ticks
+  var xTicks='';
+  var nxt=Math.min(steps,10);
+  for(var i=0;i<=nxt;i++){
+    var xv=i*(xMax/nxt);
+    var xp=px(xv);
+    xTicks+='<line x1="'+xp+'" y1="'+(PT+iH)+'" x2="'+xp+'" y2="'+(PT+iH+5)+'" stroke="#999" stroke-width="1"/>';
+    xTicks+='<text x="'+xp+'" y="'+(PT+iH+16)+'" font-size="10" text-anchor="middle" fill="#666">'+xv.toFixed(0)+'</text>';
   }
-  var nxt = Math.min(results.length - 1, 8);
-  for (var i = 0; i <= nxt; i++) {
-    var xv = results[Math.round(i * (results.length-1) / nxt)].x;
-    var xp = px(xv).toFixed(1);
-    grid += '<line x1="' + xp + '" y1="' + PT + '" x2="' + xp + '" y2="' + (PT+iH) + '" stroke="#e8e8e8" stroke-width="1"/>';
-    grid += '<line x1="' + xp + '" y1="' + (PT+iH) + '" x2="' + xp + '" y2="' + (PT+iH+5) + '" stroke="#999" stroke-width="1"/>';
-    grid += '<text x="' + xp + '" y="' + (PT+iH+17) + '" font-size="10" text-anchor="middle" fill="#666">' + xv.toFixed(0) + '</text>';
-  }
-
-  /* yn / yc 水平參考線 */
-  var refLines = '';
-  if (yn > yMin && yn < yMax) {
-    var ynP = py(yn).toFixed(1);
-    refLines += '<line x1="' + PL + '" y1="' + ynP + '" x2="' + (PL+iW) + '" y2="' + ynP + '" stroke="#2e7d32" stroke-width="1.2" stroke-dasharray="7,4"/>';
-    refLines += '<text x="' + (PL+iW+3) + '" y="' + (parseFloat(ynP)+4) + '" font-size="10" fill="#2e7d32" font-weight="700">yn</text>';
-  }
-  if (yc > yMin && yc < yMax) {
-    var ycP = py(yc).toFixed(1);
-    refLines += '<line x1="' + PL + '" y1="' + ycP + '" x2="' + (PL+iW) + '" y2="' + ycP + '" stroke="#c62828" stroke-width="1.2" stroke-dasharray="3,4"/>';
-    refLines += '<text x="' + (PL+iW+3) + '" y="' + (parseFloat(ycP)+4) + '" font-size="10" fill="#c62828" font-weight="700">yc</text>';
+  // y-axis ticks
+  var yTicks='';
+  var ny=5;
+  for(var j=0;j<=ny;j++){
+    var yv=yMin+j*yRange/ny;
+    var yp=py(yv);
+    yTicks+='<line x1="'+PL+'" y1="'+yp+'" x2="'+(PL-5)+'" y2="'+yp+'" stroke="#999" stroke-width="1"/>';
+    yTicks+='<text x="'+(PL-8)+'" y="'+(yp+4)+'" font-size="10" text-anchor="end" fill="#666">'+yv.toFixed(2)+'</text>';
   }
 
-  /* 資料點 */
-  var dots = results.map(function(r){
-    return '<circle cx="' + px(r.x).toFixed(1) + '" cy="' + py(r.y).toFixed(1) + '" r="3.5" fill="#1565c0" stroke="#fff" stroke-width="1.2"/>';
-  }).join('');
-
-  /* 圖例 */
-  var lgX = PL + 10, lgY = PT + 8;
-  var legend =
-    '<rect x="' + lgX + '" y="' + lgY + '" width="148" height="52" fill="white" stroke="#ddd" rx="4" opacity="0.95"/>' +
-    '<line x1="' + (lgX+8) + '" y1="' + (lgY+14) + '" x2="' + (lgX+30) + '" y2="' + (lgY+14) + '" stroke="#1565c0" stroke-width="2.5"/>' +
-    '<circle cx="' + (lgX+19) + '" cy="' + (lgY+14) + '" r="3" fill="#1565c0"/>' +
-    '<text x="' + (lgX+34) + '" y="' + (lgY+18) + '" font-size="10" fill="#333">水面線 WSP</text>' +
-    '<line x1="' + (lgX+8) + '" y1="' + (lgY+30) + '" x2="' + (lgX+30) + '" y2="' + (lgY+30) + '" stroke="#2e7d32" stroke-width="1.2" stroke-dasharray="7,4"/>' +
-    '<text x="' + (lgX+34) + '" y="' + (lgY+34) + '" font-size="10" fill="#333">正常水深 yn=' + yn.toFixed(3) + 'm</text>' +
-    '<line x1="' + (lgX+8) + '" y1="' + (lgY+46) + '" x2="' + (lgX+30) + '" y2="' + (lgY+46) + '" stroke="#c62828" stroke-width="1.2" stroke-dasharray="3,4"/>' +
-    '<text x="' + (lgX+34) + '" y="' + (lgY+50) + '" font-size="10" fill="#333">臨界水深 yc=' + yc.toFixed(3) + 'm</text>';
-
-  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block">' +
-    '<rect width="' + W + '" height="' + H + '" fill="#f9f8f5"/>' +
-    grid +
-    '<polygon points="' + fillPoly + '" fill="rgba(21,101,192,0.10)"/>' +
-    refLines +
-    '<polyline points="' + wsPts + '" fill="none" stroke="#1565c0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>' +
-    dots +
-    '<rect x="' + PL + '" y="' + PT + '" width="' + iW + '" height="' + iH + '" fill="none" stroke="#bbb" stroke-width="1"/>' +
-    legend +
-    '<text x="' + (PL+iW/2) + '" y="' + (H-6) + '" font-size="11" text-anchor="middle" fill="#555">距離 x (m)</text>' +
-    '<text x="14" y="' + (PT+iH/2) + '" font-size="11" text-anchor="middle" fill="#555" transform="rotate(-90,14,' + (PT+iH/2) + ')">水深 y (m)</text>' +
+  var svg='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" style="width:100%">'+
+    '<rect width="'+W+'" height="'+H+'" fill="#f9f9f9"/>'+
+    // grid
+    '<line x1="'+PL+'" y1="'+PT+'" x2="'+PL+'" y2="'+(PT+iH)+'" stroke="#ccc" stroke-width="1"/>'+
+    '<line x1="'+PL+'" y1="'+(PT+iH)+'" x2="'+(PL+iW)+'" y2="'+(PT+iH)+'" stroke="#ccc" stroke-width="1"/>'+
+    // yn line
+    (yn>yMin&&yn<yMax?
+      '<line x1="'+PL+'" y1="'+ynY+'" x2="'+(PL+iW)+'" y2="'+ynY+'" stroke="#2e7d32" stroke-width="1" stroke-dasharray="6,3"/>'+
+      '<text x="'+(PL+iW+2)+'" y="'+(ynY+4)+'" font-size="10" fill="#2e7d32">yn</text>':'')+
+    // yc line
+    (yc>yMin&&yc<yMax?
+      '<line x1="'+PL+'" y1="'+ycY+'" x2="'+(PL+iW)+'" y2="'+ycY+'" stroke="#c62828" stroke-width="1" stroke-dasharray="3,3"/>'+
+      '<text x="'+(PL+iW+2)+'" y="'+(ycY+4)+'" font-size="10" fill="#c62828">yc</text>':'')+
+    // WSP polyline (water surface)
+    '<polyline points="'+wsPts+'" fill="none" stroke="#1565c0" stroke-width="2.5" stroke-linejoin="round"/>'+
+    // data points
+    results.map(function(r){
+      return '<circle cx="'+px(r.x)+'" cy="'+py(r.y)+'" r="3" fill="#1565c0" stroke="#fff" stroke-width="1"/>';
+    }).join('')+
+    // axes ticks
+    xTicks+yTicks+
+    // labels
+    '<text x="'+(PL+iW/2)+'" y="'+(H-4)+'" font-size="11" text-anchor="middle" fill="#555">x (m)</text>'+
+    '<text x="12" y="'+(PT+iH/2)+'" font-size="11" text-anchor="middle" fill="#555" transform="rotate(-90,12,'+(PT+iH/2)+')">水深 y (m)</text>'+
+    // legend
+    '<rect x="'+PL+'" y="'+PT+'" width="140" height="42" fill="white" stroke="#ddd" rx="4"/>'+
+    '<line x1="'+(PL+8)+'" y1="'+(PT+12)+'" x2="'+(PL+28)+'" y2="'+(PT+12)+'" stroke="#1565c0" stroke-width="2.5"/>'+
+    '<text x="'+(PL+32)+'" y="'+(PT+16)+'" font-size="10" fill="#333">水面線 WSP</text>'+
+    '<line x1="'+(PL+8)+'" y1="'+(PT+26)+'" x2="'+(PL+28)+'" y2="'+(PT+26)+'" stroke="#2e7d32" stroke-width="1" stroke-dasharray="6,3"/>'+
+    '<text x="'+(PL+32)+'" y="'+(PT+30)+'" font-size="10" fill="#333">正常水深 yn</text>'+
+    '<line x1="'+(PL+8)+'" y1="'+(PT+40)+'" x2="'+(PL+28)+'" y2="'+(PT+40)+'" stroke="#c62828" stroke-width="1" stroke-dasharray="3,3"/>'+
+    '<text x="'+(PL+32)+'" y="'+(PT+44)+'" font-size="10" fill="#333">臨界水深 yc</text>'+
     '</svg>';
 
-  var wrap = document.getElementById('wsp-svg-wrap');
-  wrap.innerHTML = svg;
-  wrap.style.display = '';
+  var wrap=document.getElementById('wsp-svg-wrap');
+  wrap.innerHTML=svg;
+  wrap.style.display='';
 }
 </script>
 </body>
