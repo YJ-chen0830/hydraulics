@@ -35,6 +35,16 @@
   details.proc summary{cursor:pointer;padding:10px 14px;font-weight:700;font-size:13px;color:var(--navy);user-select:none;}
   details.proc pre{margin:0;padding:10px 16px 14px;font-family:"Courier New",monospace;font-size:11.5px;line-height:1.85;white-space:pre-wrap;color:#2c3e50;border-top:1px solid var(--line);}
   #wsp-svg-wrap{margin-top:14px;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  /* ── Mobile Tab System ── */
+  .mob-tabs{display:none;}
+  @media screen and (max-width:767px){
+    .mob-tabs{display:flex;background:var(--bg);border-bottom:2px solid var(--line);margin:0 -20px 0;padding:0 20px;}
+    .mob-tab{flex:1;padding:11px 4px;text-align:center;font-size:13.5px;font-weight:700;color:#888;cursor:pointer;background:transparent;border:none;border-bottom:3px solid transparent;transition:color .15s,border-color .15s;}
+    .mob-tab.active{color:var(--navy);border-bottom-color:var(--gold);}
+    .grid{display:block;}
+    .grid>.card{display:none;}
+    .grid>.card.mob-active{display:block;}
+  }
   @media print{
     header,.tabs,.no-print{display:none!important;}
     details.proc{display:block!important;margin-top:16px;border:1px solid #bbb;border-radius:6px;break-inside:avoid;}
@@ -59,8 +69,12 @@
 
 <!-- ===== 均勻流 ===== -->
 <div id="pane-uni" class="pane active">
+<div class="mob-tabs">
+  <button class="mob-tab active" onclick="switchMobTab('u-in',this)">📋 輸入參數</button>
+  <button class="mob-tab" id="mobTab-u-r" onclick="switchMobTab('u-r',this)">📊 計算結果</button>
+</div>
 <div class="grid">
-  <div class="card">
+  <div class="card mob-active" data-tab="u-in">
     <h2>均勻流輸入</h2>
     <label>斷面形狀</label>
     <select id="u-shape" onchange="uShapeChange()">
@@ -87,7 +101,7 @@
     <input id="u-S" type="number" value="0.002" step="0.0001" min="0.000001">
     <button onclick="calcUniform()">計算均勻流</button>
   </div>
-  <div class="card">
+  <div class="card" data-tab="u-r">
     <h2>均勻流結果</h2>
     <div id="u-result"><p style="color:#888">尚未計算</p></div>
     <details class="proc" id="u-proc" style="display:none">
@@ -100,8 +114,12 @@
 
 <!-- ===== WSP ===== -->
 <div id="pane-wsp" class="pane">
+<div class="mob-tabs">
+  <button class="mob-tab active" onclick="switchMobTab('w-in',this)">📋 輸入參數</button>
+  <button class="mob-tab" id="mobTab-w-r" onclick="switchMobTab('w-r',this)">📊 計算結果</button>
+</div>
 <div class="grid">
-  <div class="card">
+  <div class="card mob-active" data-tab="w-in">
     <h2>水面線輸入</h2>
     <label>斷面形狀</label>
     <select id="w-shape" onchange="wShapeChange()">
@@ -130,7 +148,7 @@
     <input id="w-steps" type="number" value="10" step="1" min="1" max="50">
     <button onclick="calcWSP()">計算水面線</button>
   </div>
-  <div class="card">
+  <div class="card" data-tab="w-r">
     <h2>水面線結果</h2>
     <div id="w-result"><p style="color:#888">尚未計算</p></div>
     <div id="wsp-svg-wrap" style="display:none"></div>
@@ -145,6 +163,17 @@
 
 <script>
 var G = 9.81;
+
+// Domain lock
+(function(){var h=location.hostname;var ok=!h||h==='localhost'||h==='127.0.0.1'||h==='yj-chen0830.github.io';if(!ok){document.body.innerHTML='<div style="padding:60px 30px;text-align:center;font-family:sans-serif;"><h2 style="color:#0b1f3a;">⚠ 未授權使用</h2><p>本工具版權屬於 <strong>儒鴻結構技師事務所</strong>，<br>僅授權於 <a href="https://yj-chen0830.github.io">yj-chen0830.github.io</a> 使用。</p></div>';throw new Error('Unauthorized domain');}})();
+
+function switchMobTab(name,btn){
+  btn.parentElement.querySelectorAll('.mob-tab').forEach(function(t){t.classList.remove('active');});
+  btn.classList.add('active');
+  btn.parentElement.nextElementSibling.querySelectorAll('.card').forEach(function(c){
+    c.classList.toggle('mob-active',c.dataset.tab===name);
+  });
+}
 
 function switchTab(id){
   ['uni','wsp'].forEach(function(t){
@@ -319,6 +348,7 @@ function calcUniform(){
 
   document.getElementById('u-proc-text').textContent=proc;
   document.getElementById('u-proc').style.display='';
+  if(window.innerWidth<768){var b=document.getElementById('mobTab-u-r');if(b)switchMobTab('u-r',b);}
 }
 
 /* ============ WSP ============ */
@@ -449,6 +479,7 @@ function calcWSP(){
 
   document.getElementById('w-proc-text').textContent=proc;
   document.getElementById('w-proc').style.display='';
+  if(window.innerWidth<768){var b=document.getElementById('mobTab-w-r');if(b)switchMobTab('w-r',b);}
 }
 
 function drawWSP(results, yn, yc, S0, dx, steps){
